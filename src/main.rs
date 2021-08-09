@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_mod_picking::{ *, SelectionEvent};
+use bevy_mod_picking::{SelectionEvent, *};
 
 fn main() {
     // Lots derived from
@@ -8,16 +8,23 @@ fn main() {
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
-        .add_system(move_player.system())
+        .add_system(toggle_movement_ui.system())
+        .add_system(movement_ui.system())
         // https://github.com/aevyrie/bevy_mod_picking/
         .add_plugin(PickingPlugin)
         .add_plugin(InteractablePickingPlugin)
-        .add_plugin(HighlightablePickingPlugin)
+        // .add_plugin(HighlightablePickingPlugin)
         // .add_plugin(DebugCursorPickingPlugin)
         // .add_plugin(DebugEventsPickingPlugin)
-        .add_system(tile_selection_reader.system())
+        .add_system(movement.system())
+        .insert_resource(MovementUi { enabled: false })
         .run();
 }
+
+const BOARD_SIZE: f32 = 6.0;
+const ELEVATION: f32 = 1.0;
+const PLAYER_ELEVATION: f32 = ELEVATION + 1.0;
+const MAX_ELEVATION: f32 = 28.0;
 
 // set up a simple 3D scene
 fn setup(
@@ -27,7 +34,7 @@ fn setup(
 ) {
     // set up the camera
     let mut camera = OrthographicCameraBundle::new_3d();
-    camera.orthographic_projection.scale = 13.0;
+    camera.orthographic_projection.scale = 5.0;
     camera.transform = Transform::from_xyz(5.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y);
 
     // player
@@ -98,134 +105,120 @@ fn setup(
 
 struct Player;
 struct GridSquare;
+struct MovementUi {
+    enabled: bool,
+}
+struct MovementHoverIndicator;
 
-const BOARD_SIZE: f32 = 14.0;
-const ELEVATION: f32 = 1.0;
-const PLAYER_ELEVATION: f32 = ELEVATION + 1.0;
-const MAX_ELEVATION: f32 = 28.0;
-
-// control the game character
-fn move_player(
-    keyboard_input: Res<Input<KeyCode>>,
-    mut player: Query<(&mut Transform, With<Player>)>,
+// Toggle the player movement UI on and off
+fn toggle_movement_ui (
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    keyboard_input: Res<Input<KeyCode>>, 
+    mut movement_ui_state: ResMut<MovementUi>,
+    q_camera: Query<&PickingCamera>,
+    q_grid_squares: Query<&Transform, With<GridSquare>>,
+    mut q_indicators: Query<Entity, With<MovementHoverIndicator>>,
 ) {
-    let mut moved = false;
-    let mut player = match player.single_mut() {
-        Ok((player, _)) => player,
-        Err(_) => return,
-    };
-    // -x -z
-    if keyboard_input.just_pressed(KeyCode::W) {
-        if player.translation.z > -BOARD_SIZE + 1. {
-            player.translation.z -= 1.0;
+    if keyboard_input.just_pressed(KeyCode::LShift) && !movement_ui_state.enabled {
+        info!("Left-Shift Pressed - Enabling Movement UI.");
+        movement_ui_state.enabled = true;
+        let (intersected_grid_square, _) = q_camera.single().unwrap().intersect_top().unwrap();
+        let hovered_square_transform = q_grid_squares.get(intersected_grid_square).unwrap().translation;
+        // spawn new entity with mesh as indicator
+        commands
+            .spawn_bundle(PbrBundle {
+                mesh: meshes.add(Mesh::from(shape::Cube { size: 0.2 })),
+                material: materials.add(Color::rgb(10.2, 10.2, 10.2).into()),
+                transform: Transform::from_xyz(
+                    hovered_square_transform.x, 
+                    hovered_square_transform.y, 
+                    hovered_square_transform.z
+                ),
+                ..Default::default()
+            })
+            // insert into Entity the MovementHoverIndicator component
+            .insert(MovementHoverIndicator);
+    } else if keyboard_input.just_released(KeyCode::LShift) && movement_ui_state.enabled {
+        info!("Left-Shift Released - Disabling Movement UI.");
+        movement_ui_state.enabled = false;
+        // Clean up all the indicators that may be left.
+        for indicator in q_indicators.iter_mut() {
+            commands.entity(indicator).despawn();
         }
-        if player.translation.x > -BOARD_SIZE + 1. {
-            player.translation.x -= 1.0;
-        }
-        moved = true;
-    }
-    // -z
-    if keyboard_input.just_pressed(KeyCode::E) {
-        if player.translation.z > -BOARD_SIZE + 1. {
-            player.translation.z -= 1.0;
-        }
-        moved = true;
-    }
-    // -z +x
-    if keyboard_input.just_pressed(KeyCode::D) {
-        if player.translation.z > -BOARD_SIZE {
-            player.translation.z -= 1.0;
-        }
-        if player.translation.x < BOARD_SIZE {
-            player.translation.x += 1.0;
-        }
-        moved = true;
-    }
-    // +x
-    if keyboard_input.just_pressed(KeyCode::C) {
-        if player.translation.x < BOARD_SIZE - 1. {
-            player.translation.x += 1.0;
-        }
-        moved = true;
-    }
-    // +x +z
-    if keyboard_input.just_pressed(KeyCode::X) {
-        if player.translation.z < BOARD_SIZE - 1. {
-            player.translation.z += 1.0;
-        }
-        if player.translation.x < BOARD_SIZE - 1. {
-            player.translation.x += 1.0;
-        }
-        moved = true;
-    }
-    // +z
-    if keyboard_input.just_pressed(KeyCode::Z) {
-        if player.translation.z < BOARD_SIZE - 1. {
-            player.translation.z += 1.0;
-        }
-        moved = true;
-    }
-    // -x +z
-    if keyboard_input.just_pressed(KeyCode::A) {
-        if player.translation.z < BOARD_SIZE - 1. {
-            player.translation.z += 1.0;
-        }
-        if player.translation.x > -BOARD_SIZE {
-            player.translation.x -= 1.0;
-        }
-        moved = true;
-    }
-    // -x
-    if keyboard_input.just_pressed(KeyCode::Q) {
-        if player.translation.x > -BOARD_SIZE + 1. {
-            player.translation.x -= 1.0;
-        }
-        moved = true;
-    }
-    // +y
-    if keyboard_input.just_pressed(KeyCode::Up) {
-        if player.translation.y < MAX_ELEVATION {
-            player.translation.y += 1.0;
-        }
-        moved = true;
-    }
-    if keyboard_input.just_pressed(KeyCode::Down) {
-        if player.translation.y > ELEVATION {
-            player.translation.y -= 1.0;
-        }
-        moved = true;
-    }
-
-    // move on the board
-    if moved {
-        *player = Transform {
-            translation: Vec3::new(
-                player.translation.x,
-                player.translation.y,
-                player.translation.z,
-            ),
-            ..Default::default()
-        };
     }
 }
 
-// listen for selected event.
-fn tile_selection_reader(
+fn movement_ui (
+    mut commands: Commands,
+    movement_ui_state: Res<MovementUi>,
+    mut events: EventReader<PickingEvent>,
+    mut q_indicators: Query<(Entity, &Transform, &mut MovementHoverIndicator)>,
+    q_grid_squares: Query<&Transform, With<GridSquare>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    if movement_ui_state.enabled == false {
+        return;
+    }
+    for event in events.iter() {
+        match &event {
+            &PickingEvent::Hover(HoverEvent::JustEntered(entity)) => {
+                // Spawn MovementHoverIndicator at this but slightly higher
+                // get Transform from current GridSquare
+                let hovered_square_transform = q_grid_squares.get(*entity).unwrap().translation;
+                // spawn new entity with mesh as indicator
+                commands
+                    .spawn_bundle(PbrBundle {
+                        mesh: meshes.add(Mesh::from(shape::Cube { size: 0.2 })),
+                        material: materials.add(Color::rgb(10.2, 10.2, 10.2).into()),
+                        transform: Transform::from_xyz(
+                            hovered_square_transform.x, 
+                            hovered_square_transform.y, 
+                            hovered_square_transform.z
+                        ),
+                        ..Default::default()
+                    })
+                    // insert into Entity the MovementHoverIndicator component
+                    .insert(MovementHoverIndicator);
+            },
+            &PickingEvent::Hover(HoverEvent::JustLeft(entity)) => {
+                // Despawn MovementHoverIndicator at this Transform
+                let just_left_translation = q_grid_squares.get(*entity).unwrap().translation;
+                for (indicator_entity, transform, _) in q_indicators.iter_mut() {
+                    let translation = transform.translation;
+                    if translation.x == just_left_translation.x && translation.z == just_left_translation.z {
+                        commands.entity(indicator_entity).despawn();
+                    }
+                }
+            },
+            _ => ()
+        }
+
+    }
+}
+
+fn movement (
     mut events: EventReader<PickingEvent>,
     mut queries: QuerySet<(
         Query<&mut Transform, With<Player>>,
         Query<(&Transform, &Selection), With<GridSquare>>,
-    )>
+    )>,
+    movement_ui_state: Res<MovementUi>,
 ) {
+    if !movement_ui_state.enabled {
+        return;
+    }
     for event in events.iter() {
         match &event {
-            &PickingEvent::Selection(SelectionEvent::JustSelected(entity)) => {
-                let mut player_translation = Vec3::new(1.0,1.0,1.0);
+            &PickingEvent::Selection(SelectionEvent::JustSelected(_entity)) => {
+                let mut player_translation = Vec3::new(1.0, 1.0, 1.0);
                 for (picked_transform, is_selected) in queries.q1().clone().iter() {
                     if is_selected.selected() {
                         player_translation = Vec3::new(
                             picked_transform.translation.x,
-                            ELEVATION+0.5,
+                            ELEVATION + 0.5,
                             picked_transform.translation.z,
                         )
                     }
