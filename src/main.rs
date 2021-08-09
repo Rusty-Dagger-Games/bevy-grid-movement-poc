@@ -8,16 +8,18 @@ fn main() {
         .insert_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
-        .add_system(toggle_movement_ui.system())
-        .add_system(movement_ui.system())
+        // ***** bevy mod picking *****
         // https://github.com/aevyrie/bevy_mod_picking/
         .add_plugin(PickingPlugin)
         .add_plugin(InteractablePickingPlugin)
         // .add_plugin(HighlightablePickingPlugin)
         // .add_plugin(DebugCursorPickingPlugin)
         // .add_plugin(DebugEventsPickingPlugin)
+        // ***** END bevy mod picking *****
+        .add_system(toggle_movement_ui.system())
+        .add_system(movement_ui.system())
         .add_system(movement.system())
-        .insert_resource(MovementUi { enabled: false })
+        .insert_resource(MovementUiState { enabled: false })
         .run();
 }
 
@@ -53,6 +55,9 @@ fn setup(
                 .insert_bundle(PickingCameraBundle::default());
         });
 
+
+
+    // Light
     commands.spawn_bundle(LightBundle {
         transform: Transform::from_translation(Vec3::new(0., 14.0, 0.)),
         ..Default::default()
@@ -105,7 +110,7 @@ fn setup(
 
 struct Player;
 struct GridSquare;
-struct MovementUi {
+struct MovementUiState {
     enabled: bool,
 }
 struct MovementHoverIndicator;
@@ -116,7 +121,7 @@ fn toggle_movement_ui (
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     keyboard_input: Res<Input<KeyCode>>, 
-    mut movement_ui_state: ResMut<MovementUi>,
+    mut movement_ui_state: ResMut<MovementUiState>,
     q_camera: Query<&PickingCamera>,
     q_grid_squares: Query<&Transform, With<GridSquare>>,
     mut q_indicators: Query<Entity, With<MovementHoverIndicator>>,
@@ -124,22 +129,26 @@ fn toggle_movement_ui (
     if keyboard_input.just_pressed(KeyCode::LShift) && !movement_ui_state.enabled {
         info!("Left-Shift Pressed - Enabling Movement UI.");
         movement_ui_state.enabled = true;
-        let (intersected_grid_square, _) = q_camera.single().unwrap().intersect_top().unwrap();
-        let hovered_square_transform = q_grid_squares.get(intersected_grid_square).unwrap().translation;
-        // spawn new entity with mesh as indicator
-        commands
-            .spawn_bundle(PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Cube { size: 0.2 })),
-                material: materials.add(Color::rgb(10.2, 10.2, 10.2).into()),
-                transform: Transform::from_xyz(
-                    hovered_square_transform.x, 
-                    hovered_square_transform.y, 
-                    hovered_square_transform.z
-                ),
-                ..Default::default()
-            })
-            // insert into Entity the MovementHoverIndicator component
-            .insert(MovementHoverIndicator);
+        if let Ok(camera) = q_camera.single() {
+            if let Some((intersected_grid_square, _)) = camera.intersect_top() {
+                if let Ok(hovered_square_transform) = q_grid_squares.get(intersected_grid_square) {
+                    // spawn new entity with mesh as indicator
+                    commands
+                        .spawn_bundle(PbrBundle {
+                            mesh: meshes.add(Mesh::from(shape::Cube { size: 0.2 })),
+                            material: materials.add(Color::rgb(10.2, 10.2, 10.2).into()),
+                            transform: Transform::from_xyz(
+                                hovered_square_transform.translation.x, 
+                                hovered_square_transform.translation.y, 
+                                hovered_square_transform.translation.z
+                            ),
+                            ..Default::default()
+                        })
+                        // insert into Entity the MovementHoverIndicator component
+                        .insert(MovementHoverIndicator);
+                }
+            }
+        };
     } else if keyboard_input.just_released(KeyCode::LShift) && movement_ui_state.enabled {
         info!("Left-Shift Released - Disabling Movement UI.");
         movement_ui_state.enabled = false;
@@ -152,7 +161,7 @@ fn toggle_movement_ui (
 
 fn movement_ui (
     mut commands: Commands,
-    movement_ui_state: Res<MovementUi>,
+    movement_ui_state: Res<MovementUiState>,
     mut events: EventReader<PickingEvent>,
     mut q_indicators: Query<(Entity, &Transform, &mut MovementHoverIndicator)>,
     q_grid_squares: Query<&Transform, With<GridSquare>>,
@@ -205,7 +214,7 @@ fn movement (
         Query<&mut Transform, With<Player>>,
         Query<(&Transform, &Selection), With<GridSquare>>,
     )>,
-    movement_ui_state: Res<MovementUi>,
+    movement_ui_state: Res<MovementUiState>,
 ) {
     if !movement_ui_state.enabled {
         return;
