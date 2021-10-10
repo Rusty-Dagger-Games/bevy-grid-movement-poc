@@ -1,5 +1,8 @@
 use bevy::prelude::*;
 use bevy_mod_picking::{SelectionEvent, *};
+use pan_orbit_camera::PanOrbitCamera;
+
+mod pan_orbit_camera;
 
 fn main() {
     // Lots derived from
@@ -20,6 +23,7 @@ fn main() {
         .add_system(movement_ui.system())
         .add_system(movement.system())
         .insert_resource(MovementUiState { enabled: false })
+        .add_system(pan_orbit_camera::pan_orbit_camera.system())
         .run();
 }
 
@@ -34,11 +38,6 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // set up the camera
-    let mut camera = OrthographicCameraBundle::new_3d();
-    camera.orthographic_projection.scale = 5.0;
-    camera.transform = Transform::from_xyz(5.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y);
-
     // player
     commands
         .spawn_bundle(PbrBundle {
@@ -49,9 +48,19 @@ fn setup(
         })
         .insert(Player)
         .with_children(|parent| {
+            // spawn camera
+            let translation = Vec3::new(-2.0, 2.5, 5.0);
+            let radius = translation.length();
             // Add Camera to stay relative to Player
             parent
-                .spawn_bundle(camera)
+                .spawn_bundle(PerspectiveCameraBundle {
+                    transform: Transform::from_translation(translation)
+                        .looking_at(Vec3::ZERO, Vec3::Y),
+                    ..Default::default()
+                }).insert(PanOrbitCamera {
+                    radius,
+                    ..Default::default()
+                })
                 .insert_bundle(PickingCameraBundle::default());
         });
 
