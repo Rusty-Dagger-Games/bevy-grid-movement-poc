@@ -1,5 +1,4 @@
-use crate::grid::ELEVATION;
-
+use crate::grid::MIN_ELEVATION;
 
 pub struct Player;
-pub const PLAYER_ELEVATION: f32 = ELEVATION + 1.0;
+pub const PLAYER_ELEVATION: f32 = MIN_ELEVATION + 0.5;

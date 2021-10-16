@@ -1,12 +1,12 @@
 use bevy::prelude::*;
-use bevy_mod_picking::{SelectionEvent, *};
-use grid::{ELEVATION, GridSquare};
+use bevy_mod_picking::*;
+use grid::GridSquare;
 use pan_orbit_camera::PanOrbitCamera;
-use player::{PLAYER_ELEVATION, Player};
+use player::{Player, PLAYER_ELEVATION};
 
-mod pan_orbit_camera;
-mod movement;
 pub mod grid;
+mod movement;
+mod pan_orbit_camera;
 pub mod player;
 
 fn main() {
@@ -26,13 +26,14 @@ fn main() {
         // ***** END bevy mod picking *****
         .add_system(movement::toggle_movement_ui.system())
         .add_system(movement::movement_ui.system())
+        .add_system(movement::clean_up_movement_indicators.system())
         .add_system(movement::movement.system())
         .insert_resource(movement::MovementUiState::default())
         .add_system(pan_orbit_camera::pan_orbit_camera.system())
         .run();
 }
 
-const BOARD_SIZE: f32 = 6.0;
+const BOARD_SIZE: f32 = 2000.0;
 
 // set up a simple 3D scene
 fn setup(
@@ -59,14 +60,13 @@ fn setup(
                     transform: Transform::from_translation(translation)
                         .looking_at(Vec3::ZERO, Vec3::Y),
                     ..Default::default()
-                }).insert(PanOrbitCamera {
+                })
+                .insert(PanOrbitCamera {
                     radius,
                     ..Default::default()
                 })
                 .insert_bundle(PickingCameraBundle::default());
         });
-
-
 
     // Light
     commands.spawn_bundle(LightBundle {
@@ -76,46 +76,13 @@ fn setup(
 
     // Grid!
     let black_material = materials.add(Color::rgb(0.1, 0.1, 0.1).into());
-    let white_material = materials.add(Color::rgb(0.9, 0.9, 0.9).into());
-    for i in (-BOARD_SIZE) as i32..(BOARD_SIZE) as i32 {
-        for j in (-BOARD_SIZE) as i32..(BOARD_SIZE) as i32 {
-            commands
-                .spawn_bundle(PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Plane { size: 1. })),
-                    material: black_material.clone(),
-                    transform: Transform::from_translation(Vec3::new(
-                        (i as f32) + 0.5,
-                        ELEVATION,
-                        (j as f32) + 0.5,
-                    )),
-                    ..Default::default()
-                })
-                .insert_bundle(PickableBundle::default())
-                .insert(GridSquare);
-
-            // Lines along the Z axis
-            commands.spawn_bundle(PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Plane { size: 1. })),
-                material: white_material.clone(),
-                transform: Transform {
-                    translation: Vec3::new(i as f32, ELEVATION + 0.001, j as f32),
-                    scale: Vec3::new(0.1, 0.1, 1.),
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
-            // Lines along the X axis
-            commands.spawn_bundle(PbrBundle {
-                mesh: meshes.add(Mesh::from(shape::Plane { size: 1. })),
-                material: white_material.clone(),
-                transform: Transform {
-                    translation: Vec3::new(i as f32, ELEVATION + 0.001, j as f32),
-                    scale: Vec3::new(1., 0.1, 0.1),
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
-        }
-    }
+    commands
+        .spawn_bundle(PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::Plane { size: BOARD_SIZE })),
+            material: black_material.clone(),
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ..Default::default()
+        })
+        .insert_bundle(PickableBundle::default())
+        .insert(GridSquare);
 }
-
